@@ -45,7 +45,7 @@ const char *get_mime_type(const char *file_ext){
    magic = magic_open(MAGIC_MIME_TYPE);
    magic_load(magic, NULL);
    magic_compile(magic, NULL);
-   mime = magic_file(magic);
+   mime = magic_file(magic, file_ext);
    
    if(mime){
       magic_close(magic);
