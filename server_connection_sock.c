@@ -11,6 +11,7 @@
 #include <fcntl.h>
 #include <pthread.h>
 #include "handle.c"
+#include <arpa/inet.h>
 
 #define BUFFER_SIZE 8192
 
@@ -19,6 +20,7 @@ void http_response(const char *file_name, const char *file_ext, char *response, 
 char *decode(const char* url);
 const char *get_file_extension(const char *filename);
 const char *get_mime_type(const char *file_ext);
+void send_error_response(int client_socket);
 
 int server_socket;
 int PORT = 8080;
@@ -55,7 +57,11 @@ int main(void){
 
       if ((*client_socket = accept(server_socket, (struct sockaddr *)&client_address, &client_address_length))< 0){
          perror("Client connection failed.");
+         free(client_socket);
       }
+      char client_ip[INET_ADDRSTRLEN];
+      inet_ntop(AF_INET, &client_address.sin_addr, client_ip, sizeof(client_ip));
+      printf("Connection from %s\n", client_ip);
       pthread_t thread_id;
       pthread_create(&thread_id, NULL, handle_client_request, (void *)client_socket);
       pthread_detach(thread_id);
@@ -76,19 +82,30 @@ void* handle_client_request(void *arg){
 
       if (regexec(&regex, buffer, 2, matches, 0) == 0){
          buffer[matches[1].rm_eo] = '\0';
-         const char *url_file_name = matches[1].rm_so + buffer;
+         const char *url_file_name = buffer + matches[1].rm_so;
          char *file_name = decode(url_file_name);
-         if(file_name){curl_free(file_name);}
+
+         if(file_name == NULL){
+            send_error_response(client_socket);
+            free(buffer);
+            return NULL;
+         }
+         if (strcmp(file_name, "") == 0){
+            file_name = "index.html";
+         }
+         char full_file_path[BUFFER_SIZE];
+         snprintf(full_file_path, BUFFER_SIZE, "/home/vytautas/projects/c/http_serv/server_files/%s", file_name);
+
          char file_ext[32];
-         strcpy(file_ext, get_file_extension(file_name));
+         strcpy(file_ext, get_file_extension(full_file_path));
 
          char *response = (char *)malloc(BUFFER_SIZE * 2 * sizeof(char));
          size_t response_len;
-         http_response(file_name, file_ext, response, &response_len);
+         http_response(full_file_path, file_ext, response, &response_len);
 
          send(client_socket, response, response_len, 0);
          free(response);
-         free(file_name);
+         curl_free(file_name);
       }
       regfree(&regex);
    }
@@ -105,7 +122,7 @@ void http_response(const char *file_name, const char *file_ext, char *response, 
       "Content-Type: %s\r\n"
       "\r\n",
       mime_type);
-   
+      
    int file_ad = open(file_name, O_RDONLY);
    if (file_ad == -1){
       snprintf(response, BUFFER_SIZE,
