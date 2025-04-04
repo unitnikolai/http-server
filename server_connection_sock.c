@@ -105,7 +105,6 @@ void* handle_client_request(void *arg){
 
          send(client_socket, response, response_len, 0);
          free(response);
-         curl_free(file_name);
       }
       regfree(&regex);
    }
